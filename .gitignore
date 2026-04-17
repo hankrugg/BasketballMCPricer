@@ -1,3 +1,16 @@
-.DS_store
-
+.DS_Store
 .venv/
+
+# Keep the project-level LaTeX source, ignore generated artifacts.
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+tex/*.pdf
+
+# Keep shared workspace settings, ignore other local VS Code state.
+.vscode/*
+!.vscode/settings.json
