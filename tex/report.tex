@@ -1,8 +1,10 @@
 \documentclass{article}
 \usepackage{graphicx} % Required for inserting images
 \usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{url}
 
-\title{Basketball Prediction Contract Monte Carlo Pricer}
+\title{Exact Fourier Pricing of Basketball Prediction Contracts}
 \author{Hank Rugg}
 \date{April 2026}
 
@@ -11,27 +13,240 @@
 \maketitle
 
 \section{Introduction}
-Prediction markets allow bettors to wager based on their belief in the outcome of an event. Binary digital contracts are sold as a cash or nothing asset; cash in the case of the event, nothing otherwise.
+Prediction markets allow market participants to take positions based on their beliefs about the outcome of an event. Binary digital contracts are cash-or-nothing assets: they pay a fixed amount if the event occurs and zero otherwise.
 
-To price these contracts, we will start with implied
+In this project, we study basketball winner contracts and model the evolution of the score through time using stochastic team score processes \(S_A(t)\) and \(S_B(t)\). Under this setup, the contract value can be written as a model-implied probability, priced exactly by Fourier inversion under the baseline model, and later verified by Monte Carlo simulation.
 
 \section{Contract definition}
-The contracts we study are basketball prediction market contracts with payoff
-\[
-X = \mathbf{1}\{P(T) > 0\},
-\]
-where \(P(T)\) denotes the final point differential, defined as
-\[
-P(T) = \text{Score}_A(T) - \text{Score}_B(T).
-\]
-Thus, a ``Yes'' contract on Team A pays \$1 if Team A wins the game and \$0 otherwise.
+The contracts we study are basketball prediction market contracts written on the final game outcome. Let \(T\) denote the official end of the game, including overtime if applicable. Let \(S_A(t)\) and \(S_B(t)\) denote the cumulative points scored by Team A and Team B up to time \(t\), and define the point margin by
+\begin{equation}
+\label{eq:point-margin}
+P(t) = S_A(t) - S_B(t).
+\end{equation}
+The contract payoff is then given by
+\begin{equation}
+\label{eq:contract-payoff}
+X = \mathbf{1}\{P(T) > 0\}.
+\end{equation}
+Equation \eqref{eq:contract-payoff} shows that a ``Yes'' contract on Team A pays \$1 if Team A wins the game and \$0 otherwise.
 
 \section{Score process model}
+We model each team's cumulative score as a finite-activity pure-jump Levy process, specifically a compound Poisson process with marks in \(\{1,2,3\}\) \cite[pp.~46--47]{applebaumch1}.
 
+As a baseline model, we assume that for each team \(i \in \{A,B\}\), the score process \(S_i(t)\) is a compound Poisson Levy process with stationary and independent increments. We further assume that the mark sequence is i.i.d. with support on \(\{1,2,3\}\), and that the team score processes \(S_A\) and \(S_B\) are independent.
 
+For each team \(i \in \{A,B\}\), let \(N_i(t)\) be a Poisson process with intensity \(\lambda_i > 0\), representing the number of scoring events (baskets) for team \(i\) up to time \(t\). Let \(\{Y_{i,n}\}_{n\geq 1}\) be an i.i.d. mark sequence, independent of \(N_i\), where each mark records the number of points scored on a given scoring event (basket). We assume that the mark distribution is
+\begin{equation}
+\label{eq:mark-distribution}
+\mathbb{P}(Y_{i,n} = k) = p_{i,k}, \qquad k \in \{1,2,3\},
+\end{equation}
+with probabilities summing to one:
+\begin{equation}
+\label{eq:mark-probabilities-sum}
+p_{i,1} + p_{i,2} + p_{i,3} = 1.
+\end{equation}
+Under the specification in \eqref{eq:mark-distribution}--\eqref{eq:mark-probabilities-sum}, the cumulative score process is
+\begin{equation}
+\label{eq:score-process-sum}
+S_i(t) = \sum_{n=1}^{N_i(t)} Y_{i,n}, \qquad i \in \{A,B\}.
+\end{equation}
+Equation \eqref{eq:score-process-sum} is Applebaum's compound Poisson construction \cite[p.~46]{applebaumch1}, and Proposition 1.3.11 on the following page shows that this process is a Levy process \cite[p.~47]{applebaumch1}.
 
+The same model can also be written using Applebaum's Poisson random measure notation. For each team \(i\) and each Borel set \(A \subseteq \{1,2,3\}\), let \(N_i(t,A)\) denote the number of scoring jumps for team \(i\) up to time \(t\) whose marks lie in \(A\). Then \(N_i(t,\cdot)\) is a counting measure, and the corresponding Levy measure is the specialization of the generic compound Poisson form \(\nu = c\mu\) \cite[p.~29]{applebaumch1}
+\begin{equation}
+\label{eq:levy-measure}
+\nu_i(dz) = \lambda_i \sum_{k=1}^3 p_{i,k}\,\delta_k(dz),
+\end{equation}
+and Applebaum's Poisson integral representation gives
+\begin{equation}
+\label{eq:score-process-integral}
+S_i(t) = \int_{\{1,2,3\}} z\,N_i(t,dz).
+\end{equation}
+This is exactly the cumulative score obtained by summing jump sizes \cite[pp.~90--92]{applebaumch2}. Combining \eqref{eq:point-margin} and \eqref{eq:score-process-integral}, the point margin may be written as
+\begin{equation}
+\label{eq:point-margin-integral}
+P(t) = \int_{\{1,2,3\}} z\,N_A(t,dz) - \int_{\{1,2,3\}} z\,N_B(t,dz).
+\end{equation}
+Equations \eqref{eq:levy-measure}--\eqref{eq:point-margin-integral} are the Poisson random measure formulation of the same model and follow Applebaum's discussion of jumps, Poisson random measures, and Poisson integrals \cite[pp.~86--92]{applebaumch2}. Thus, \(S_A\) and \(S_B\) are nondecreasing, cadlag Levy processes with stationary and independent increments.
+
+\subsection{Jump SDE and exact representation}
+
+To write the model in jump-SDE form, define
+\[
+N_{i,k}(t) := N_i(t,\{k\}), \qquad k \in \{1,2,3\}.
+\]
+By Theorem 2.3.5, each \(N_{i,k}\) is a Poisson process with intensity \(\nu_i(\{k\}) = \lambda_i p_{i,k}\), and for fixed \(i\) the three processes \(N_{i,1}, N_{i,2}, N_{i,3}\) are independent because the sets \(\{1\}, \{2\}, \{3\}\) are disjoint \cite[pp.~87--89]{applebaumch2}. Hence the team score process satisfies the jump SDE
+\begin{equation}
+\label{eq:score-process-sde}
+dS_i(t) = dN_{i,1}(t) + 2\,dN_{i,2}(t) + 3\,dN_{i,3}(t), \qquad S_i(0)=0.
+\end{equation}
+Integrating \eqref{eq:score-process-sde} gives the exact solution
+\begin{equation}
+\label{eq:score-process-exact}
+S_i(t) = N_{i,1}(t) + 2N_{i,2}(t) + 3N_{i,3}(t).
+\end{equation}
+Using \eqref{eq:point-margin}, the point margin therefore satisfies
+\begin{equation}
+\label{eq:point-margin-sde}
+dP(t) = \sum_{k=1}^3 k\,dN_{A,k}(t) - \sum_{k=1}^3 k\,dN_{B,k}(t), \qquad P(0)=0,
+\end{equation}
+with exact representation
+\begin{equation}
+\label{eq:point-margin-exact}
+P(t) = \sum_{k=1}^3 k\,N_{A,k}(t) - \sum_{k=1}^3 k\,N_{B,k}(t).
+\end{equation}
+This representation is intuitive: \(N_{i,1}(t)\), \(N_{i,2}(t)\), and \(N_{i,3}(t)\) simply count the number of 1-point, 2-point, and 3-point scoring events for team \(i\) up to time \(t\). The total score is therefore obtained by adding those counts with the appropriate weights, and the point margin is just the difference between the two weighted totals. This representation will be the starting point for the pricing section, since it identifies the finite-time law of \(P(t)\) in terms of six independent Poisson counts.
+
+\subsection{Moment calculations}
+
+To compute the first two moments, we apply Applebaum's Poisson integration theorem to \eqref{eq:score-process-integral} with \(A=\{1,2,3\}\), \(f(z)=z\), and intensity measure \(\nu_i\). Since \(A\) is bounded below and \(f\) is bounded on \(A\), we have \(f \in L^1(A,\nu_i) \cap L^2(A,\nu_i)\). Therefore, Theorem 2.3.8 gives \cite[pp.~91--92]{applebaumch2}
+\begin{align}
+\label{eq:score-process-mean}
+\mathbb{E}[S_i(t)] &= t \int_{\{1,2,3\}} z\,\nu_i(dz), \\
+\label{eq:score-process-variance}
+\mathrm{Var}(S_i(t)) &= t \int_{\{1,2,3\}} z^2\,\nu_i(dz).
+\end{align}
+In our one-dimensional scoring setting, the variance formula is the scalar specialization of Applebaum's \(L^2\) identity. Substituting the discrete Levy measure from \eqref{eq:levy-measure} into \eqref{eq:score-process-mean} yields
+\begin{equation}
+\begin{aligned}
+\mathbb{E}[S_i(t)]
+&= t \int_{\{1,2,3\}} z \lambda_i \sum_{k=1}^3 p_{i,k}\,\delta_k(dz) \\
+&= \lambda_i t \sum_{k=1}^3 k\,p_{i,k} \\
+&= \lambda_i t \left(p_{i,1} + 2p_{i,2} + 3p_{i,3}\right),
+\end{aligned}
+\end{equation}
+and \eqref{eq:score-process-variance} becomes
+\begin{equation}
+\begin{aligned}
+\mathrm{Var}(S_i(t))
+&= t \int_{\{1,2,3\}} z^2 \lambda_i \sum_{k=1}^3 p_{i,k}\,\delta_k(dz) \\
+&= \lambda_i t \sum_{k=1}^3 k^2 p_{i,k} \\
+&= \lambda_i t \left(p_{i,1} + 4p_{i,2} + 9p_{i,3}\right).
+\end{aligned}
+\end{equation}
+Combining \eqref{eq:point-margin} with \eqref{eq:score-process-mean}, the mean of the point margin is
+\begin{equation}
+\label{eq:point-margin-mean}
+\mathbb{E}[P(t)] = t \left(\lambda_A \sum_{k=1}^3 k\,p_{A,k} - \lambda_B \sum_{k=1}^3 k\,p_{B,k}\right),
+\end{equation}
+and, under the independence assumption between \(S_A\) and \(S_B\), \eqref{eq:score-process-variance} gives
+\begin{equation}
+\label{eq:point-margin-variance}
+\mathrm{Var}(P(t)) = t \left(\lambda_A \sum_{k=1}^3 k^2 p_{A,k} + \lambda_B \sum_{k=1}^3 k^2 p_{B,k}\right).
+\end{equation}
 
 \section{Pricing framework}
+
+Because the contract matures over the course of a single game, we ignore discounting and take the contract value to be the model-implied win probability. Thus,
+\begin{equation}
+\label{eq:pricing-value}
+V_0 = \mathbb{E}[X] = \mathbb{P}(P(T) > 0).
+\end{equation}
+Following Carr and Madan, once the characteristic function of the terminal state variable is available analytically, Fourier methods provide a natural route to pricing \cite[p.~61]{carrmadan}. In the present model, the terminal point margin admits the exact representation \eqref{eq:point-margin-exact}, so its characteristic function can be derived in closed form.
+
+For each \(k \in \{1,2,3\}\), the counting processes satisfy
+\[
+N_{A,k}(T) \sim \mathrm{Poisson}(\lambda_A p_{A,k}T),
+\qquad
+N_{B,k}(T) \sim \mathrm{Poisson}(\lambda_B p_{B,k}T),
+\]
+and these six Poisson random variables are independent. Therefore, using the exact representation \eqref{eq:point-margin-exact}, the characteristic function of \(P(T)\) is
+\begin{equation}
+\label{eq:point-margin-characteristic-function}
+\begin{aligned}
+\phi_P(u)
+&:= \mathbb{E}\left[e^{iuP(T)}\right] \\
+&= \prod_{k=1}^3 \mathbb{E}\left[e^{iukN_{A,k}(T)}\right]
+   \mathbb{E}\left[e^{-iukN_{B,k}(T)}\right] \\
+&= \exp\left(
+T\sum_{k=1}^3
+\left[
+\lambda_A p_{A,k}\left(e^{iuk}-1\right)
++
+\lambda_B p_{B,k}\left(e^{-iuk}-1\right)
+\right]
+\right).
+\end{aligned}
+\end{equation}
+
+Since \(P(T)\) takes values in \(\mathbb{Z}\), let
+\begin{equation}
+\label{eq:point-margin-pmf}
+q_m := \mathbb{P}(P(T)=m), \qquad m \in \mathbb{Z}.
+\end{equation}
+Then
+\[
+\phi_P(u) = \sum_{m\in\mathbb{Z}} q_m e^{ium},
+\]
+so \(\phi_P\) is the Fourier series associated with the terminal point-margin distribution. Following the general inversion perspective in Shephard \cite[p.~519]{shephard}, the distribution may be recovered from the characteristic function. In the present lattice-valued setting, Fourier orthogonality on \([-\pi,\pi]\) yields
+\begin{equation}
+\label{eq:lattice-inversion}
+q_m = \frac{1}{2\pi}\int_{-\pi}^{\pi} e^{-ium}\phi_P(u)\,du, \qquad m \in \mathbb{Z}.
+\end{equation}
+
+Substituting \eqref{eq:lattice-inversion} into \eqref{eq:pricing-value}, the exact baseline price is
+\begin{equation}
+\label{eq:baseline-price}
+V_0 = \sum_{m=1}^{\infty} q_m.
+\end{equation}
+Equations \eqref{eq:point-margin-characteristic-function}--\eqref{eq:baseline-price} therefore identify an exact transform-based pricing procedure: compute the characteristic function of the terminal point margin, recover the lattice probabilities by Fourier inversion, and sum the masses over strictly positive margins.
+
+\subsection{Numerical FFT implementation}
+
+To evaluate \eqref{eq:lattice-inversion} numerically, we exploit the fact that \(P(T)\in\mathbb{Z}\), so its characteristic function is \(2\pi\)-periodic. Let \(N\) be an even positive integer and define the uniform frequency grid
+\begin{equation}
+\label{eq:fft-frequency-grid}
+u_j = -\pi + j\Delta u, \qquad \Delta u = \frac{2\pi}{N}, \qquad j=0,1,\dots,N-1.
+\end{equation}
+Applying the trapezoidal rule to \eqref{eq:lattice-inversion} gives
+\begin{equation}
+\label{eq:fft-quadrature}
+q_m^{(N)} := \frac{1}{N}\sum_{j=0}^{N-1} e^{-iu_j m}\phi_P(u_j),
+\end{equation}
+which approximates \(q_m\). Since the integrand is periodic, this discretization is naturally compatible with FFT methods \cite[pp.~61--68]{carrmadan}.
+
+To obtain all retained probabilities in one transform, define the centered margin grid
+\begin{equation}
+\label{eq:fft-margin-grid}
+m_\ell = -\frac{N}{2} + \ell, \qquad \ell=0,1,\dots,N-1.
+\end{equation}
+Substituting \eqref{eq:fft-frequency-grid} into \eqref{eq:fft-quadrature} and using \(u_j=-\pi+2\pi j/N\) yields
+\begin{equation}
+\label{eq:fft-dft-form}
+q_{m_\ell}^{(N)}
+= \frac{(-1)^{m_\ell}}{N}
+\sum_{j=0}^{N-1}
+\left[(-1)^j\phi_P(u_j)\right]
+e^{-2\pi i j\ell/N}.
+\end{equation}
+Hence, if we define
+\begin{equation}
+\label{eq:fft-input}
+y_j := (-1)^j\phi_P(u_j), \qquad j=0,1,\dots,N-1,
+\end{equation}
+and let
+\begin{equation}
+\label{eq:fft-output}
+\widehat{y}_\ell := \sum_{j=0}^{N-1} y_j e^{-2\pi i j\ell/N},
+\qquad \ell=0,1,\dots,N-1,
+\end{equation}
+then the approximate lattice probabilities are recovered from a single FFT via
+\begin{equation}
+\label{eq:fft-probabilities}
+q_{m_\ell}^{(N)} = \frac{(-1)^{m_\ell}}{N}\widehat{y}_\ell.
+\end{equation}
+
+Because the true support of \(P(T)\) is unbounded, the FFT returns wrapped probabilities. More precisely,
+\begin{equation}
+\label{eq:fft-aliasing}
+q_{m_\ell}^{(N)} = \sum_{r\in\mathbb{Z}} q_{m_\ell + rN}.
+\end{equation}
+Accordingly, \(N\) must be chosen large enough so that the tail mass outside the retained range is negligible. After computing \eqref{eq:fft-probabilities}, the corresponding FFT approximation to the contract value is
+\begin{equation}
+\label{eq:fft-price}
+V_0^{(N)} = \sum_{m_\ell=1}^{N/2-1} q_{m_\ell}^{(N)}.
+\end{equation}
+This is the numerical pricing formula we will use for the baseline model. It is exact up to discretization and aliasing error, and it provides a fast benchmark against which later Monte Carlo estimates can be validated.
 
 \section{Calibration}
 
@@ -42,5 +257,50 @@ Thus, a ``Yes'' contract on Team A pays \$1 if Team A wins the game and \$0 othe
 \section{Implementation plan}
 
 \section{Conclusion}
+
+\subsection{Model limitations}
+
+The baseline specification developed in this paper is intentionally simple. In particular, it does not incorporate time-varying pace, game-state effects, or strategic dependence between the two teams. These limitations should be kept in mind when interpreting the model and motivate later extensions such as state-dependent intensities or live repricing adjustments.
+
+\section{References}
+\begin{thebibliography}{9}
+
+\bibitem{applebaumch1}
+David Applebaum.
+``L\'evy processes.''
+In \textit{L\'evy Processes and Stochastic Calculus}.
+Cambridge University Press, 2004, pp.~1--69.
+Chapter DOI: \url{https://doi.org/10.1017/CBO9780511755323.004}.
+
+\bibitem{applebaumch2}
+David Applebaum.
+``Martingales, stopping times and random measures.''
+In \textit{L\'evy Processes and Stochastic Calculus}.
+Cambridge University Press, 2004, pp.~70--119.
+Chapter DOI: \url{https://doi.org/10.1017/CBO9780511755323.005}.
+
+\bibitem{carrmadan}
+Peter Carr and Dilip B. Madan.
+``Option valuation using the fast Fourier transform.''
+\textit{Journal of Computational Finance}, 2(4):61--73, 1999.
+DOI: \url{https://doi.org/10.21314/JCF.1999.043}.
+
+\bibitem{shephard}
+N. G. Shephard.
+``From characteristic function to distribution function: A simple framework for the theory.''
+\textit{Econometric Theory}, 7(4):519--529, 1991.
+DOI: \url{https://doi.org/10.1017/S0266466600004746}.
+
+\bibitem{conttankov}
+Rama Cont and Peter Tankov.
+\textit{Financial Modelling with Jump Processes}.
+Chapman \& Hall/CRC, 2004.
+
+\bibitem{glasserman}
+Paul Glasserman.
+\textit{Monte Carlo Methods in Financial Engineering}.
+Springer, 2004.
+
+\end{thebibliography}
 
 \end{document}
