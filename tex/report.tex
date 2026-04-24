@@ -31,7 +31,7 @@ X = \mathbf{1}\{P(T) > 0\}.
 Equation \eqref{eq:contract-payoff} shows that a ``Yes'' contract on Team A pays \$1 if Team A wins the game and \$0 otherwise.
 
 \section{Score process model}
-We model each team's cumulative score as a finite-activity pure-jump Levy process, specifically a compound Poisson process with marks in \(\{1,2,3\}\) \cite[pp.~46--47]{applebaumch1}.
+We model each team's cumulative score ası a finite-activity pure-jump Levy process, specifically a compound Poisson process with marks in \(\{1,2,3\}\) \cite[pp.~46--47]{applebaumch1}.
 
 As a baseline model, we assume that for each team \(i \in \{A,B\}\), the score process \(S_i(t)\) is a compound Poisson Levy process with stationary and independent increments. We further assume that the mark sequence is i.i.d. with support on \(\{1,2,3\}\), and that the team score processes \(S_A\) and \(S_B\) are independent.
 
@@ -248,9 +248,114 @@ V_0^{(N)} = \sum_{m_\ell=1}^{N/2-1} q_{m_\ell}^{(N)}.
 \end{equation}
 This is the numerical pricing formula we will use for the baseline model. It is exact up to discretization and aliasing error, and it provides a fast benchmark against which later Monte Carlo estimates can be validated.
 
+\section{Monte Carlo pricer}
+
+Alongside the exact Fourier benchmark, we will implement a Monte Carlo pricer for the same winner contract. Under the baseline compound Poisson specification, the payoff in \eqref{eq:contract-payoff} depends only on the terminal point margin \(P(T)\), so the Monte Carlo method does not need to simulate a full path of scoring times. Instead, it is enough to sample the six terminal Poisson counts that appear in the exact representation \eqref{eq:point-margin-exact}; see Glasserman for the general Monte Carlo pricing framework \cite{glasserman}.
+
+For each \(k \in \{1,2,3\}\), define the terminal Poisson means
+\begin{equation}
+\label{eq:mc-poisson-means}
+\mu_{A,k} = \lambda_A p_{A,k} T,
+\qquad
+\mu_{B,k} = \lambda_B p_{B,k} T.
+\end{equation}
+Then
+\[
+N_{A,k}(T) \sim \mathrm{Poisson}(\mu_{A,k}),
+\qquad
+N_{B,k}(T) \sim \mathrm{Poisson}(\mu_{B,k}),
+\]
+and these six Poisson random variables are mutually independent.
+
+For simulation path \(j=1,\dots,M\), we draw independent counts \(N_{A,k}^{(j)}(T)\) and \(N_{B,k}^{(j)}(T)\), form the terminal point margin
+\begin{equation}
+\label{eq:mc-terminal-margin}
+P^{(j)}(T) = \sum_{k=1}^3 k\,N_{A,k}^{(j)}(T) - \sum_{k=1}^3 k\,N_{B,k}^{(j)}(T),
+\end{equation}
+and define the simulated contract payoff by
+\begin{equation}
+\label{eq:mc-simulated-payoff}
+X^{(j)} = \mathbf{1}\{P^{(j)}(T) > 0\}.
+\end{equation}
+The Monte Carlo price estimator is then
+\begin{equation}
+\label{eq:mc-estimator}
+\widehat{V}_M = \frac{1}{M}\sum_{j=1}^M X^{(j)}.
+\end{equation}
+Since \(X^{(j)}\) is Bernoulli, the estimated standard error is
+\begin{equation}
+\label{eq:mc-standard-error}
+\widehat{\mathrm{SE}}(\widehat{V}_M)
+=
+\sqrt{\frac{\widehat{V}_M(1-\widehat{V}_M)}{M}},
+\end{equation}
+which leads to the usual approximate \(95\%\) confidence interval
+\begin{equation}
+\label{eq:mc-confidence-interval}
+\widehat{V}_M \pm 1.96\,\widehat{\mathrm{SE}}(\widehat{V}_M).
+\end{equation}
+
+The Monte Carlo pricer will therefore serve as the main implementation-side pricing engine for the project. In its initial form, it will take the baseline model parameters \((\lambda_A,\lambda_B,p_{A,1},p_{A,2},p_{A,3},p_{B,1},p_{B,2},p_{B,3},T)\), generate many independent realizations of \eqref{eq:mc-terminal-margin}, and return a price estimate, standard error, confidence interval, and convergence diagnostics. This first implementation will be pregame only and will price the Team A winner contract under the baseline model. Later, the same Monte Carlo framework can be extended to live repricing and richer dynamics for which the exact Fourier benchmark is no longer available in such a clean form.
+
 \section{Calibration}
 
+\subsection{Data}
+
+The calibration exercise will require two types of data. First, a broad game-level or play-by-play scoring sample is needed in order to estimate the pooled mark distribution \((p_1,p_2,p_3)\) from observed 1-point, 2-point, and 3-point scoring events. Second, market data for a specific matchup are needed in order to infer the team-specific scoring intensities from traded prices. In practice, the most useful market observables will be a winner contract together with at least one additional quantity such as a total-points line or a point-spread market. A key implementation choice will be whether to work on regulation time only or to include overtime explicitly. If overtime is included, the observed game horizon \(T\) can be extended accordingly; if regulation only is used, then the calibration sample should be restricted to a fixed horizon.
+
+\subsection{Method}
+
+For the initial empirical implementation, we begin with a parsimonious calibration in which the mark probabilities are assumed to be common across teams,
+\[
+p_{A,k} = p_{B,k} = p_k, \qquad k \in \{1,2,3\}.
+\]
+This reduces the number of free parameters and makes it possible to estimate the mark distribution from pooled scoring data rather than from a separate sample for each team. If \(n_{i,k,g}\) denotes the observed number of \(k\)-point scoring events for team \(i\) in game \(g\), and \(T_g\) denotes the observed game length, then a natural estimator of the common mark probabilities is
+\[
+\widehat{p}_k
+=
+\frac{\sum_g \sum_{i\in\{A,B\}} n_{i,k,g}}
+{\sum_g \sum_{i\in\{A,B\}} \sum_{\ell=1}^3 n_{i,\ell,g}}.
+\]
+Once \((p_1,p_2,p_3)\) has been fixed, the remaining free parameters are the two team intensities \(\lambda_A\) and \(\lambda_B\). These can then be inferred from market prices in an implied-parameter step analogous in spirit to implied volatility. However, a single winner contract provides only one equation,
+\[
+\mathbb{P}(P(T)>0;\lambda_A,\lambda_B) = \pi_{\mathrm{win}}^{\mathrm{mkt}},
+\]
+so it does not identify both intensities by itself. Accordingly, the initial market calibration should use at least two observables. A natural choice is to combine the winner contract with a total-points market, so that \(\lambda_A\) and \(\lambda_B\) solve
+\[
+\mathbb{P}(P(T)>0;\lambda_A,\lambda_B) = \pi_{\mathrm{win}}^{\mathrm{mkt}},
+\]
+\[
+\mathbb{E}[S_A(T)+S_B(T)]
+=
+T(\lambda_A+\lambda_B)(p_1+2p_2+3p_3)
+=
+\Pi_{\mathrm{tot}}^{\mathrm{mkt}},
+\]
+where \(\Pi_{\mathrm{tot}}^{\mathrm{mkt}}\) denotes a market-implied total-points target. More generally, if winner, spread, and total markets are all available, the two intensities can be obtained by minimizing a weighted least-squares loss across several market moments. This produces the initial parameter vector
+\[
+(\lambda_A,\lambda_B,p_1,p_2,p_3),
+\]
+subject to the constraint \(p_1+p_2+p_3=1\). In other words, the first calibration pass estimates a pooled scoring-composition distribution from data and then backs out the two team intensity parameters from market prices. More flexible versions of the model can later relax this restriction and allow team-specific mark probabilities.
+
+\subsection{Empirical application}
+
+Once the initial parameter set has been estimated, the model can be applied to a real game and a real winner contract. The empirical application will proceed by selecting a specific matchup, estimating the pooled mark probabilities from a broader historical sample, collecting the relevant market observables for that matchup, backing out the implied values of \(\lambda_A\) and \(\lambda_B\), and then computing the model-implied Team A win probability under the fitted parameters. This comparison will show whether the parsimonious baseline model can be aligned closely with the market and will highlight where the model may fail to capture information already embedded in traded prices.
+
+\subsection{Calibration diagnostics}
+
+In addition to reporting the fitted parameter values, the calibration section should include simple diagnostics based on implied moments and scores. In particular, the calibrated model implies expected team scores through \eqref{eq:score-process-mean} and point-margin moments through \eqref{eq:point-margin-mean}--\eqref{eq:point-margin-variance}. Comparing these implied quantities with observed game-level scoring summaries will provide a basic check on whether the fitted model is capturing the correct scoring scale and dispersion before it is used for pricing.
+
 \section{Live repricing extension}
+
+A natural extension of the baseline model is to replace the constant scoring intensities with time-varying instantaneous intensities. In particular, instead of working with constant \(\lambda_i\) and fixed mark probabilities \(p_{i,k}\), one could specify instantaneous scoring intensities \(\lambda_{i,k}(t)\) for \(k \in \{1,2,3\}\). This is analogous in spirit to short-rate modeling, where the relevant finite-horizon quantity is obtained by integrating an instantaneous rate over time. Under such a specification, the cumulative intensity for \(k\)-point scoring events would be
+\[
+\Lambda_{i,k}(T) = \int_0^T \lambda_{i,k}(t)\,dt,
+\]
+and the terminal event counts would satisfy
+\[
+N_{i,k}(T) \sim \mathrm{Poisson}(\Lambda_{i,k}(T)).
+\]
+This would allow the model to capture changing pace across the game, end-of-game effects, and overtime extensions in a more realistic way while preserving the Poisson-process structure.
 
 \section{Trading / stat arb application}
 

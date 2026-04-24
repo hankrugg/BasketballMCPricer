@@ -1,5 +1,6 @@
 .DS_Store
 .venv/
+*__pycache__
 
 # Keep the project-level LaTeX source, ignore generated artifacts.
 *.aux
@@ -14,3 +15,6 @@ tex/*.pdf
 # Keep shared workspace settings, ignore other local VS Code state.
 .vscode/*
 !.vscode/settings.json
+
+# Local data pulls and derived datasets.
+data/

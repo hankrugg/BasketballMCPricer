@@ -11,3 +11,5 @@ dependencies:
   - ipykernel
   - pytest
   - pip
+  - pip:
+      - nba_api
