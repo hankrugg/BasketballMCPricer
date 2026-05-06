@@ -1,6 +1,18 @@
-# Simulation Application Project
+# Basketball Monte Carlo Prediction Market Study
 
-Monte Carlo pricer for digital prediction contracts using modular arrival processes and mark distributions.
+This project reproduces a one-game study of the April 22, 2026 Phoenix Suns at
+Oklahoma City Thunder playoff game. It compares Kalshi's OKC winner contract
+price path with a simple Monte Carlo model-implied win probability path.
+
+The cleaned project scope is intentionally narrow:
+
+- Calibrate fixed pregame scoring intensities from market inputs.
+- Align the observed score state to each Kalshi minute timestamp.
+- Reprice the OKC winner contract by Monte Carlo from each in-game state.
+- Compare the model path against the Kalshi price path.
+
+The model does not update scoring intensities during the game, and there are no
+backtest files in the current project.
 
 ## Environment
 
@@ -11,60 +23,89 @@ conda env create -f environment.yml
 conda activate simapp-project
 ```
 
-If you update dependencies later:
+If dependencies change later:
 
 ```bash
 conda env update -f environment.yml --prune
 ```
 
-## TODO
+## Main Notebook
 
-Finish proposal writeup
+Run the one-game analysis here:
 
-## Current Modules
+```text
+notebooks/PHXOKC.ipynb
+```
+
+The notebook uses relative paths, so it can be opened from either the project
+root or the `notebooks/` folder. It performs the full workflow:
+
+1. Load the pooled NBA scoring distribution.
+2. Load Kalshi minute-level OKC yes prices.
+3. Load the reconstructed OKC/PHX score path.
+4. Convert timestamps from UTC to Eastern time.
+5. Calibrate pregame scoring intensities.
+6. Carry forward the latest score state to each Kalshi timestamp.
+7. Run Monte Carlo repricing at each timestamp.
+8. Plot model-implied OKC win probability against Kalshi.
+
+## Current Code
 
 - `src/MonteCarlo.py`
-  - Pregame winner pricing under the baseline model
-  - Live repricing from an in-game score state with `price_from_state(...)`
-  - Pace updating with `update_total_pace(...)`
+  - `MonteCarlo`: simulates terminal scoring counts and prices a Team A winner contract.
+  - `price_from_state(...)`: reprices from current margin and time remaining.
 
 - `src/Calibration.py`
-  - Parsimonious calibration from winner + total for notebook work
-  - Deterministic sportsbook calibration from spread + total with
-    `imply_intensities_from_spread_total(...)`
-  - Batch implied-intensity calibration for market tables
+  - `Calibration`: solves team scoring intensities from Kalshi yes probability plus total.
+  - `imply_intensities_from_spread_total(...)`: computes a spread-plus-total reference calibration.
+  - `build_score_state_grid(...)`: aligns irregular NBA scoring events to Kalshi minute bars without future leakage.
+  - `load_distribution(...)`: loads the pooled scoring mark distribution.
 
-- `src/Backtest.py`
-  - Score-state alignment to Kalshi minute bars
-  - Live fair-value generation through the game
-  - Mark-to-market trading backtest against Kalshi bid/ask
+## Data
+
+The notebook expects these processed files:
+
+- `data/processed/scoring_distribution_2024-25_regular_season.csv`
+- `data/processed/kalshi/kalshi-price-history-kxnbagame-26apr22phxokc-minute.csv`
+- `data/processed/nba/score_path_0042500142_okc_phx.csv`
+
+There is also a source team-game box score file used to produce the scoring
+distribution:
+
+- `data/processed/team_game_box_scores_2024-25_regular_season.csv`
 
 ## Data Scripts
 
 - `scripts/fetch_scoring_distribution.py`
-  - Pull NBA team-game box scores and estimate pooled historical
-    `p1 / p2 / p3`
+  - Pulls NBA team-game box scores.
+  - Estimates the pooled probabilities for 1-, 2-, and 3-point scoring events.
 
 - `scripts/fetch_game_score_path.py`
-  - Pull one NBA game's play-by-play
-  - Reconstruct a scoring-event path with timestamps, elapsed minutes,
-    cumulative score, and scoring-event counts
-  - Write the one-game score path in the format expected by the backtest code
+  - Pulls one NBA game's play-by-play.
+  - Reconstructs scoring events with timestamps, elapsed minutes, cumulative score, and scoring-event counts.
+  - Writes the score path format used by `notebooks/PHXOKC.ipynb`.
 
-- `scripts/fetch_kalshi_historical_markets.py`
-  - Pull historical Kalshi market metadata by ticker, event ticker, or series ticker
-  - Optionally pull historical candlesticks over a requested time range
-  - Write raw JSON and flattened CSVs under `data/`
+The Kalshi minute data is already stored in `data/processed/kalshi/` for this
+project; no Kalshi-fetching script is currently included.
 
-- `scripts/find_kalshi_events.py`
-  - Discover Kalshi event tickers and associated market tickers for a series
-  - Filter to a season/date window and optional team-name text matches
-  - Resolve market tickers from live nested markets or historical markets as needed
+## Report
 
-## Tests
+The short writeup is:
 
-Run the synthetic regression tests from the project root:
+```text
+tex/report.tex
+```
+
+To rebuild the PDF from the `tex/` folder:
 
 ```bash
-pytest -q
+pdflatex -interaction=nonstopmode report.tex
+```
+
+## Quick Verification
+
+From the project root, this checks that the local modules import:
+
+```bash
+python -B -c "import sys; sys.path.insert(0, 'src'); import MonteCarlo, Calibration; print('imports ok')"
 ```

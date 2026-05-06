@@ -1,10 +1,11 @@
-\documentclass{article}
-\usepackage{graphicx} % Required for inserting images
+\documentclass[10pt]{article}
+\usepackage[margin=0.85in]{geometry}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{booktabs}
 \usepackage{url}
 
-\title{Exact Fourier Pricing of Basketball Prediction Contracts}
+\title{Monte Carlo Pricing of a Basketball Prediction Market}
 \author{Hank Rugg}
 \date{April 2026}
 
@@ -12,400 +13,165 @@
 
 \maketitle
 
-\section{Introduction}
-Prediction markets allow market participants to take positions based on their beliefs about the outcome of an event. Binary digital contracts are cash-or-nothing assets: they pay a fixed amount if the event occurs and zero otherwise.
+\section{Project scope}
 
-In this project, we study basketball winner contracts and model the evolution of the score through time using stochastic team score processes \(S_A(t)\) and \(S_B(t)\). Under this setup, the contract value can be written as a model-implied probability, priced exactly by Fourier inversion under the baseline model, and later verified by Monte Carlo simulation.
+This project prices and tracks one basketball prediction-market contract: a
+Kalshi ``Yes'' contract on Oklahoma City defeating Phoenix in the April 22,
+2026 playoff game. If Team A is Oklahoma City and Team B is Phoenix, the payoff is
+\begin{equation}
+    X = \mathbf{1}\{S_A(T) - S_B(T) > 0\},
+\end{equation}
+where \(S_A(t)\) and \(S_B(t)\) are cumulative team scores and \(T=48\)
+minutes is the regulation horizon. Since the contract settles within a single
+game, the model price is interpreted directly as a win probability:
+\begin{equation}
+    V_t = \mathbb{P}\left(S_A(T) - S_B(T) > 0 \mid \mathcal{F}_t\right).
+\end{equation}
 
-\section{Contract definition}
-The contracts we study are basketball prediction market contracts written on the final game outcome. Let \(T\) denote the official end of the game, including overtime if applicable. Let \(S_A(t)\) and \(S_B(t)\) denote the cumulative points scored by Team A and Team B up to time \(t\), and define the point margin by
-\begin{equation}
-\label{eq:point-margin}
-P(t) = S_A(t) - S_B(t).
-\end{equation}
-The contract payoff is then given by
-\begin{equation}
-\label{eq:contract-payoff}
-X = \mathbf{1}\{P(T) > 0\}.
-\end{equation}
-Equation \eqref{eq:contract-payoff} shows that a ``Yes'' contract on Team A pays \$1 if Team A wins the game and \$0 otherwise.
+The notebook keeps the scoring parameters fixed from pregame calibration and
+asks how a simple Monte Carlo model reprices the contract as the observed score
+and time remaining change throughout the game.
 
-\section{Score process model}
-We model each team's cumulative score ası a finite-activity pure-jump Levy process, specifically a compound Poisson process with marks in \(\{1,2,3\}\) \cite[pp.~46--47]{applebaumch1}.
+\section{Scoring model}
 
-As a baseline model, we assume that for each team \(i \in \{A,B\}\), the score process \(S_i(t)\) is a compound Poisson Levy process with stationary and independent increments. We further assume that the mark sequence is i.i.d. with support on \(\{1,2,3\}\), and that the team score processes \(S_A\) and \(S_B\) are independent.
-
-For each team \(i \in \{A,B\}\), let \(N_i(t)\) be a Poisson process with intensity \(\lambda_i > 0\), representing the number of scoring events (baskets) for team \(i\) up to time \(t\). Let \(\{Y_{i,n}\}_{n\geq 1}\) be an i.i.d. mark sequence, independent of \(N_i\), where each mark records the number of points scored on a given scoring event (basket). We assume that the mark distribution is
-\begin{equation}
-\label{eq:mark-distribution}
-\mathbb{P}(Y_{i,n} = k) = p_{i,k}, \qquad k \in \{1,2,3\},
-\end{equation}
-with probabilities summing to one:
-\begin{equation}
-\label{eq:mark-probabilities-sum}
-p_{i,1} + p_{i,2} + p_{i,3} = 1.
-\end{equation}
-Under the specification in \eqref{eq:mark-distribution}--\eqref{eq:mark-probabilities-sum}, the cumulative score process is
-\begin{equation}
-\label{eq:score-process-sum}
-S_i(t) = \sum_{n=1}^{N_i(t)} Y_{i,n}, \qquad i \in \{A,B\}.
-\end{equation}
-Equation \eqref{eq:score-process-sum} is Applebaum's compound Poisson construction \cite[p.~46]{applebaumch1}, and Proposition 1.3.11 on the following page shows that this process is a Levy process \cite[p.~47]{applebaumch1}.
-
-The same model can also be written using Applebaum's Poisson random measure notation. For each team \(i\) and each Borel set \(A \subseteq \{1,2,3\}\), let \(N_i(t,A)\) denote the number of scoring jumps for team \(i\) up to time \(t\) whose marks lie in \(A\). Then \(N_i(t,\cdot)\) is a counting measure, and the corresponding Levy measure is the specialization of the generic compound Poisson form \(\nu = c\mu\) \cite[p.~29]{applebaumch1}
-\begin{equation}
-\label{eq:levy-measure}
-\nu_i(dz) = \lambda_i \sum_{k=1}^3 p_{i,k}\,\delta_k(dz),
-\end{equation}
-and Applebaum's Poisson integral representation gives
-\begin{equation}
-\label{eq:score-process-integral}
-S_i(t) = \int_{\{1,2,3\}} z\,N_i(t,dz).
-\end{equation}
-This is exactly the cumulative score obtained by summing jump sizes \cite[pp.~90--92]{applebaumch2}. Combining \eqref{eq:point-margin} and \eqref{eq:score-process-integral}, the point margin may be written as
-\begin{equation}
-\label{eq:point-margin-integral}
-P(t) = \int_{\{1,2,3\}} z\,N_A(t,dz) - \int_{\{1,2,3\}} z\,N_B(t,dz).
-\end{equation}
-Equations \eqref{eq:levy-measure}--\eqref{eq:point-margin-integral} are the Poisson random measure formulation of the same model and follow Applebaum's discussion of jumps, Poisson random measures, and Poisson integrals \cite[pp.~86--92]{applebaumch2}. Thus, \(S_A\) and \(S_B\) are nondecreasing, cadlag Levy processes with stationary and independent increments.
-
-\subsection{Jump SDE and exact representation}
-
-To write the model in jump-SDE form, define
+Each team's score is modeled as a compound Poisson scoring process. Scoring
+events arrive with team intensity \(\lambda_i\) per minute, and each event has
+mark \(Y \in \{1,2,3\}\), representing a free throw, two-point basket, or
+three-point basket. The pooled mark distribution is estimated from the 2024--25
+NBA regular season:
 \[
-N_{i,k}(t) := N_i(t,\{k\}), \qquad k \in \{1,2,3\}.
+    p_1 = 0.2884, \qquad p_2 = 0.4805, \qquad p_3 = 0.2311.
 \]
-By Theorem 2.3.5, each \(N_{i,k}\) is a Poisson process with intensity \(\nu_i(\{k\}) = \lambda_i p_{i,k}\), and for fixed \(i\) the three processes \(N_{i,1}, N_{i,2}, N_{i,3}\) are independent because the sets \(\{1\}, \{2\}, \{3\}\) are disjoint \cite[pp.~87--89]{applebaumch2}. Hence the team score process satisfies the jump SDE
-\begin{equation}
-\label{eq:score-process-sde}
-dS_i(t) = dN_{i,1}(t) + 2\,dN_{i,2}(t) + 3\,dN_{i,3}(t), \qquad S_i(0)=0.
-\end{equation}
-Integrating \eqref{eq:score-process-sde} gives the exact solution
-\begin{equation}
-\label{eq:score-process-exact}
-S_i(t) = N_{i,1}(t) + 2N_{i,2}(t) + 3N_{i,3}(t).
-\end{equation}
-Using \eqref{eq:point-margin}, the point margin therefore satisfies
-\begin{equation}
-\label{eq:point-margin-sde}
-dP(t) = \sum_{k=1}^3 k\,dN_{A,k}(t) - \sum_{k=1}^3 k\,dN_{B,k}(t), \qquad P(0)=0,
-\end{equation}
-with exact representation
-\begin{equation}
-\label{eq:point-margin-exact}
-P(t) = \sum_{k=1}^3 k\,N_{A,k}(t) - \sum_{k=1}^3 k\,N_{B,k}(t).
-\end{equation}
-This representation is intuitive: \(N_{i,1}(t)\), \(N_{i,2}(t)\), and \(N_{i,3}(t)\) simply count the number of 1-point, 2-point, and 3-point scoring events for team \(i\) up to time \(t\). The total score is therefore obtained by adding those counts with the appropriate weights, and the point margin is just the difference between the two weighted totals. This representation will be the starting point for the pricing section, since it identifies the finite-time law of \(P(t)\) in terms of six independent Poisson counts.
-
-\subsection{Moment calculations}
-
-To compute the first two moments, we apply Applebaum's Poisson integration theorem to \eqref{eq:score-process-integral} with \(A=\{1,2,3\}\), \(f(z)=z\), and intensity measure \(\nu_i\). Since \(A\) is bounded below and \(f\) is bounded on \(A\), we have \(f \in L^1(A,\nu_i) \cap L^2(A,\nu_i)\). Therefore, Theorem 2.3.8 gives \cite[pp.~91--92]{applebaumch2}
-\begin{align}
-\label{eq:score-process-mean}
-\mathbb{E}[S_i(t)] &= t \int_{\{1,2,3\}} z\,\nu_i(dz), \\
-\label{eq:score-process-variance}
-\mathrm{Var}(S_i(t)) &= t \int_{\{1,2,3\}} z^2\,\nu_i(dz).
-\end{align}
-In our one-dimensional scoring setting, the variance formula is the scalar specialization of Applebaum's \(L^2\) identity. Substituting the discrete Levy measure from \eqref{eq:levy-measure} into \eqref{eq:score-process-mean} yields
-\begin{equation}
-\begin{aligned}
-\mathbb{E}[S_i(t)]
-&= t \int_{\{1,2,3\}} z \lambda_i \sum_{k=1}^3 p_{i,k}\,\delta_k(dz) \\
-&= \lambda_i t \sum_{k=1}^3 k\,p_{i,k} \\
-&= \lambda_i t \left(p_{i,1} + 2p_{i,2} + 3p_{i,3}\right),
-\end{aligned}
-\end{equation}
-and \eqref{eq:score-process-variance} becomes
-\begin{equation}
-\begin{aligned}
-\mathrm{Var}(S_i(t))
-&= t \int_{\{1,2,3\}} z^2 \lambda_i \sum_{k=1}^3 p_{i,k}\,\delta_k(dz) \\
-&= \lambda_i t \sum_{k=1}^3 k^2 p_{i,k} \\
-&= \lambda_i t \left(p_{i,1} + 4p_{i,2} + 9p_{i,3}\right).
-\end{aligned}
-\end{equation}
-Combining \eqref{eq:point-margin} with \eqref{eq:score-process-mean}, the mean of the point margin is
-\begin{equation}
-\label{eq:point-margin-mean}
-\mathbb{E}[P(t)] = t \left(\lambda_A \sum_{k=1}^3 k\,p_{A,k} - \lambda_B \sum_{k=1}^3 k\,p_{B,k}\right),
-\end{equation}
-and, under the independence assumption between \(S_A\) and \(S_B\), \eqref{eq:score-process-variance} gives
-\begin{equation}
-\label{eq:point-margin-variance}
-\mathrm{Var}(P(t)) = t \left(\lambda_A \sum_{k=1}^3 k^2 p_{A,k} + \lambda_B \sum_{k=1}^3 k^2 p_{B,k}\right).
-\end{equation}
-
-\section{Pricing framework}
-
-Because the contract matures over the course of a single game, we ignore discounting and take the contract value to be the model-implied win probability. Thus,
-\begin{equation}
-\label{eq:pricing-value}
-V_0 = \mathbb{E}[X] = \mathbb{P}(P(T) > 0).
-\end{equation}
-Following Carr and Madan, once the characteristic function of the terminal state variable is available analytically, Fourier methods provide a natural route to pricing \cite[p.~61]{carrmadan}. In the present model, the terminal point margin admits the exact representation \eqref{eq:point-margin-exact}, so its characteristic function can be derived in closed form.
-
-For each \(k \in \{1,2,3\}\), the counting processes satisfy
+Thus the expected points per scoring event are
 \[
-N_{A,k}(T) \sim \mathrm{Poisson}(\lambda_A p_{A,k}T),
-\qquad
-N_{B,k}(T) \sim \mathrm{Poisson}(\lambda_B p_{B,k}T),
+    \bar y = p_1 + 2p_2 + 3p_3 = 1.9426.
 \]
-and these six Poisson random variables are independent. Therefore, using the exact representation \eqref{eq:point-margin-exact}, the characteristic function of \(P(T)\) is
-\begin{equation}
-\label{eq:point-margin-characteristic-function}
-\begin{aligned}
-\phi_P(u)
-&:= \mathbb{E}\left[e^{iuP(T)}\right] \\
-&= \prod_{k=1}^3 \mathbb{E}\left[e^{iukN_{A,k}(T)}\right]
-   \mathbb{E}\left[e^{-iukN_{B,k}(T)}\right] \\
-&= \exp\left(
-T\sum_{k=1}^3
-\left[
-\lambda_A p_{A,k}\left(e^{iuk}-1\right)
-+
-\lambda_B p_{B,k}\left(e^{-iuk}-1\right)
-\right]
-\right).
-\end{aligned}
-\end{equation}
 
-Since \(P(T)\) takes values in \(\mathbb{Z}\), let
-\begin{equation}
-\label{eq:point-margin-pmf}
-q_m := \mathbb{P}(P(T)=m), \qquad m \in \mathbb{Z}.
-\end{equation}
-Then
+Let \(N_{i,k}(t)\) be the number of \(k\)-point scoring events by team \(i\)
+through time \(t\). Under the model,
 \[
-\phi_P(u) = \sum_{m\in\mathbb{Z}} q_m e^{ium},
+    N_{i,k}(t) \sim \mathrm{Poisson}(\lambda_i p_k t),
 \]
-so \(\phi_P\) is the Fourier series associated with the terminal point-margin distribution. Following the general inversion perspective in Shephard \cite[p.~519]{shephard}, the distribution may be recovered from the characteristic function. In the present lattice-valued setting, Fourier orthogonality on \([-\pi,\pi]\) yields
+and the team score is
 \begin{equation}
-\label{eq:lattice-inversion}
-q_m = \frac{1}{2\pi}\int_{-\pi}^{\pi} e^{-ium}\phi_P(u)\,du, \qquad m \in \mathbb{Z}.
+    S_i(t) = N_{i,1}(t) + 2N_{i,2}(t) + 3N_{i,3}(t).
 \end{equation}
+The model assumes independent increments and independent team scoring processes.
+Its useful computational feature is that a winner contract depends only on the
+terminal margin.
 
-Substituting \eqref{eq:lattice-inversion} into \eqref{eq:pricing-value}, the exact baseline price is
-\begin{equation}
-\label{eq:baseline-price}
-V_0 = \sum_{m=1}^{\infty} q_m.
-\end{equation}
-Equations \eqref{eq:point-margin-characteristic-function}--\eqref{eq:baseline-price} therefore identify an exact transform-based pricing procedure: compute the characteristic function of the terminal point margin, recover the lattice probabilities by Fourier inversion, and sum the masses over strictly positive margins.
+\section{Monte Carlo pricing process}
 
-\subsection{Numerical FFT implementation}
-
-To evaluate \eqref{eq:lattice-inversion} numerically, we exploit the fact that \(P(T)\in\mathbb{Z}\), so its characteristic function is \(2\pi\)-periodic. Let \(N\) be an even positive integer and define the uniform frequency grid
-\begin{equation}
-\label{eq:fft-frequency-grid}
-u_j = -\pi + j\Delta u, \qquad \Delta u = \frac{2\pi}{N}, \qquad j=0,1,\dots,N-1.
-\end{equation}
-Applying the trapezoidal rule to \eqref{eq:lattice-inversion} gives
-\begin{equation}
-\label{eq:fft-quadrature}
-q_m^{(N)} := \frac{1}{N}\sum_{j=0}^{N-1} e^{-iu_j m}\phi_P(u_j),
-\end{equation}
-which approximates \(q_m\). Since the integrand is periodic, this discretization is naturally compatible with FFT methods \cite[pp.~61--68]{carrmadan}.
-
-To obtain all retained probabilities in one transform, define the centered margin grid
-\begin{equation}
-\label{eq:fft-margin-grid}
-m_\ell = -\frac{N}{2} + \ell, \qquad \ell=0,1,\dots,N-1.
-\end{equation}
-Substituting \eqref{eq:fft-frequency-grid} into \eqref{eq:fft-quadrature} and using \(u_j=-\pi+2\pi j/N\) yields
-\begin{equation}
-\label{eq:fft-dft-form}
-q_{m_\ell}^{(N)}
-= \frac{(-1)^{m_\ell}}{N}
-\sum_{j=0}^{N-1}
-\left[(-1)^j\phi_P(u_j)\right]
-e^{-2\pi i j\ell/N}.
-\end{equation}
-Hence, if we define
-\begin{equation}
-\label{eq:fft-input}
-y_j := (-1)^j\phi_P(u_j), \qquad j=0,1,\dots,N-1,
-\end{equation}
-and let
-\begin{equation}
-\label{eq:fft-output}
-\widehat{y}_\ell := \sum_{j=0}^{N-1} y_j e^{-2\pi i j\ell/N},
-\qquad \ell=0,1,\dots,N-1,
-\end{equation}
-then the approximate lattice probabilities are recovered from a single FFT via
-\begin{equation}
-\label{eq:fft-probabilities}
-q_{m_\ell}^{(N)} = \frac{(-1)^{m_\ell}}{N}\widehat{y}_\ell.
-\end{equation}
-
-Because the true support of \(P(T)\) is unbounded, the FFT returns wrapped probabilities. More precisely,
-\begin{equation}
-\label{eq:fft-aliasing}
-q_{m_\ell}^{(N)} = \sum_{r\in\mathbb{Z}} q_{m_\ell + rN}.
-\end{equation}
-Accordingly, \(N\) must be chosen large enough so that the tail mass outside the retained range is negligible. After computing \eqref{eq:fft-probabilities}, the corresponding FFT approximation to the contract value is
-\begin{equation}
-\label{eq:fft-price}
-V_0^{(N)} = \sum_{m_\ell=1}^{N/2-1} q_{m_\ell}^{(N)}.
-\end{equation}
-This is the numerical pricing formula we will use for the baseline model. It is exact up to discretization and aliasing error, and it provides a fast benchmark against which later Monte Carlo estimates can be validated.
-
-\section{Monte Carlo pricer}
-
-Alongside the exact Fourier benchmark, we will implement a Monte Carlo pricer for the same winner contract. Under the baseline compound Poisson specification, the payoff in \eqref{eq:contract-payoff} depends only on the terminal point margin \(P(T)\), so the Monte Carlo method does not need to simulate a full path of scoring times. Instead, it is enough to sample the six terminal Poisson counts that appear in the exact representation \eqref{eq:point-margin-exact}; see Glasserman for the general Monte Carlo pricing framework \cite{glasserman}.
-
-For each \(k \in \{1,2,3\}\), define the terminal Poisson means
-\begin{equation}
-\label{eq:mc-poisson-means}
-\mu_{A,k} = \lambda_A p_{A,k} T,
-\qquad
-\mu_{B,k} = \lambda_B p_{B,k} T.
-\end{equation}
-Then
+The Monte Carlo pricer samples terminal scoring counts rather than every
+scoring time. For a pregame price, each simulation \(j=1,\dots,M\) draws
 \[
-N_{A,k}(T) \sim \mathrm{Poisson}(\mu_{A,k}),
-\qquad
-N_{B,k}(T) \sim \mathrm{Poisson}(\mu_{B,k}),
+    N_{A,k}^{(j)}(T) \sim \mathrm{Poisson}(\lambda_A p_k T),
+    \qquad
+    N_{B,k}^{(j)}(T) \sim \mathrm{Poisson}(\lambda_B p_k T),
 \]
-and these six Poisson random variables are mutually independent.
-
-For simulation path \(j=1,\dots,M\), we draw independent counts \(N_{A,k}^{(j)}(T)\) and \(N_{B,k}^{(j)}(T)\), form the terminal point margin
+for \(k=1,2,3\). It then forms the simulated final margin
 \begin{equation}
-\label{eq:mc-terminal-margin}
-P^{(j)}(T) = \sum_{k=1}^3 k\,N_{A,k}^{(j)}(T) - \sum_{k=1}^3 k\,N_{B,k}^{(j)}(T),
+    P^{(j)}(T)
+    =
+    \sum_{k=1}^3 kN_{A,k}^{(j)}(T)
+    -
+    \sum_{k=1}^3 kN_{B,k}^{(j)}(T),
 \end{equation}
-and define the simulated contract payoff by
+and the simulated payoff
 \begin{equation}
-\label{eq:mc-simulated-payoff}
-X^{(j)} = \mathbf{1}\{P^{(j)}(T) > 0\}.
+    X^{(j)} = \mathbf{1}\{P^{(j)}(T) > 0\}.
 \end{equation}
-The Monte Carlo price estimator is then
+The model price and standard error are
 \begin{equation}
-\label{eq:mc-estimator}
-\widehat{V}_M = \frac{1}{M}\sum_{j=1}^M X^{(j)}.
+    \widehat V_M = \frac{1}{M}\sum_{j=1}^M X^{(j)},
+    \qquad
+    \widehat{\mathrm{SE}} =
+    \sqrt{\frac{\widehat V_M(1-\widehat V_M)}{M}},
 \end{equation}
-Since \(X^{(j)}\) is Bernoulli, the estimated standard error is
+with a clipped approximate 95\% confidence interval
+\(\widehat V_M \pm 1.96\,\widehat{\mathrm{SE}}\).
+
+The live version uses the same logic from an observed in-game state. If the
+current margin is \(m_t=S_A(t)-S_B(t)\) and the remaining regulation time is
+\(\tau=T-t\), the simulation samples only future scoring over \(\tau\). The
+live price is then estimated as
 \begin{equation}
-\label{eq:mc-standard-error}
-\widehat{\mathrm{SE}}(\widehat{V}_M)
-=
-\sqrt{\frac{\widehat{V}_M(1-\widehat{V}_M)}{M}},
+    \widehat V_t
+    =
+    \frac{1}{M}\sum_{j=1}^M
+    \mathbf{1}\{m_t + \Delta P_\tau^{(j)} > 0\}.
 \end{equation}
-which leads to the usual approximate \(95\%\) confidence interval
+This is the role of \texttt{price\_from\_state}: it adds the known margin to
+simulated future margins and returns the probability that Oklahoma City wins.
+
+\section{Game calibration}
+
+The remaining unknowns are \(\lambda_A\) and \(\lambda_B\). The notebook uses
+two sources of market information. First, the ESPN pregame sportsbook line
+listed a total of 216.5 points and Oklahoma City as a 17.5-point
+favorite.\footnote{ESPN game page:
+\url{https://www.espn.com/nba/game/_/gameId/401869368}.} This gives a
+spread-plus-total calibration:
+\[
+    \mathbb{E}[S_A(T)+S_B(T)] = 216.5,
+    \qquad
+    \mathbb{E}[S_A(T)-S_B(T)] = 17.5.
+\]
+Since \(\mathbb{E}[S_i(T)] = \lambda_i T\bar y\), these two equations split
+the total scoring intensity between the teams.
+
+Second, the notebook uses the Kalshi pregame OKC ``Yes'' price and the same
+216.5 total. The total fixes
 \begin{equation}
-\label{eq:mc-confidence-interval}
-\widehat{V}_M \pm 1.96\,\widehat{\mathrm{SE}}(\widehat{V}_M).
+    \lambda_A + \lambda_B
+    =
+    \frac{216.5}{48\bar y}
+    =
+    2.3218.
 \end{equation}
+The calibration searches for \(\lambda_A\), sets
+\(\lambda_B=2.3218-\lambda_A\), and runs the Monte Carlo pricer until the
+model win probability matches the Kalshi pregame probability of 0.9137. The
+code uses a coarse grid to find a bracket and Brent's method to solve for the
+final value.
 
-The Monte Carlo pricer will therefore serve as the main implementation-side pricing engine for the project. In its initial form, it will take the baseline model parameters \((\lambda_A,\lambda_B,p_{A,1},p_{A,2},p_{A,3},p_{B,1},p_{B,2},p_{B,3},T)\), generate many independent realizations of \eqref{eq:mc-terminal-margin}, and return a price estimate, standard error, confidence interval, and convergence diagnostics. This first implementation will be pregame only and will price the Team A winner contract under the baseline model. Later, the same Monte Carlo framework can be extended to live repricing and richer dynamics for which the exact Fourier benchmark is no longer available in such a clean form.
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Calibration & \(\lambda_A\) & \(\lambda_B\) \\
+\midrule
+Spread plus total & 1.2547 & 1.0671 \\
+Kalshi yes plus total & 1.3246 & 0.9972 \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\section{Calibration}
+The live path uses the Kalshi-yes-plus-total fit, so the model agrees with the
+observed pregame winner market before the game starts. Later differences are
+driven by realized score, time remaining, Monte Carlo error, and information in
+the market that the simple scoring model does not represent.
 
-\subsection{Data}
+\section{Live game path}
 
-The calibration exercise will require two types of data. First, a broad game-level or play-by-play scoring sample is needed in order to estimate the pooled mark distribution \((p_1,p_2,p_3)\) from observed 1-point, 2-point, and 3-point scoring events. Second, market data for a specific matchup are needed in order to infer the team-specific scoring intensities from traded prices. In practice, the most useful market observables will be a winner contract together with at least one additional quantity such as a total-points line or a point-spread market. A key implementation choice will be whether to work on regulation time only or to include overtime explicitly. If overtime is included, the observed game horizon \(T\) can be extended accordingly; if regulation only is used, then the calibration sample should be restricted to a fixed horizon.
+The notebook loads two time series: minute-level Kalshi prices and a
+reconstructed NBA scoring-event path. The raw timestamps are stored in UTC, so
+the notebook converts them to Eastern time before analysis. For example,
+2026-04-23T01:30Z is April 22 at 9:30 PM ET, the local game date.
 
-\subsection{Method}
+Scoring events are irregular, while Kalshi prices are minute bars. To align the
+data without leaking future information, the notebook carries forward only the
+latest known score state to each Kalshi timestamp. It records the OKC margin,
+elapsed minutes, remaining time, and contemporaneous Kalshi price, then runs
+\texttt{price\_from\_state}. The live model path is therefore a sequence of
+independent Monte Carlo repricings, one per Kalshi timestamp.
 
-For the initial empirical implementation, we begin with a parsimonious calibration in which the mark probabilities are assumed to be common across teams,
-\[
-p_{A,k} = p_{B,k} = p_k, \qquad k \in \{1,2,3\}.
-\]
-This reduces the number of free parameters and makes it possible to estimate the mark distribution from pooled scoring data rather than from a separate sample for each team. If \(n_{i,k,g}\) denotes the observed number of \(k\)-point scoring events for team \(i\) in game \(g\), and \(T_g\) denotes the observed game length, then a natural estimator of the common mark probabilities is
-\[
-\widehat{p}_k
-=
-\frac{\sum_g \sum_{i\in\{A,B\}} n_{i,k,g}}
-{\sum_g \sum_{i\in\{A,B\}} \sum_{\ell=1}^3 n_{i,\ell,g}}.
-\]
-Once \((p_1,p_2,p_3)\) has been fixed, the remaining free parameters are the two team intensities \(\lambda_A\) and \(\lambda_B\). These can then be inferred from market prices in an implied-parameter step analogous in spirit to implied volatility. However, a single winner contract provides only one equation,
-\[
-\mathbb{P}(P(T)>0;\lambda_A,\lambda_B) = \pi_{\mathrm{win}}^{\mathrm{mkt}},
-\]
-so it does not identify both intensities by itself. Accordingly, the initial market calibration should use at least two observables. A natural choice is to combine the winner contract with a total-points market, so that \(\lambda_A\) and \(\lambda_B\) solve
-\[
-\mathbb{P}(P(T)>0;\lambda_A,\lambda_B) = \pi_{\mathrm{win}}^{\mathrm{mkt}},
-\]
-\[
-\mathbb{E}[S_A(T)+S_B(T)]
-=
-T(\lambda_A+\lambda_B)(p_1+2p_2+3p_3)
-=
-\Pi_{\mathrm{tot}}^{\mathrm{mkt}},
-\]
-where \(\Pi_{\mathrm{tot}}^{\mathrm{mkt}}\) denotes a market-implied total-points target. More generally, if winner, spread, and total markets are all available, the two intensities can be obtained by minimizing a weighted least-squares loss across several market moments. This produces the initial parameter vector
-\[
-(\lambda_A,\lambda_B,p_1,p_2,p_3),
-\]
-subject to the constraint \(p_1+p_2+p_3=1\). In other words, the first calibration pass estimates a pooled scoring-composition distribution from data and then backs out the two team intensity parameters from market prices. More flexible versions of the model can later relax this restriction and allow team-specific mark probabilities.
+For the OKC--PHX game, Oklahoma City won 120--107. The first in-game Kalshi
+price was 0.9198, while the model path started at 0.9203 after applying the
+Kalshi-yes-plus-total calibration. Across the game window, the mean absolute
+difference between the model fair value and the Kalshi price was 0.0098, with
+an RMSE of 0.0127 and a maximum absolute gap of 0.0404. Near the end of the
+game both the market and model moved close to one as Oklahoma City's lead
+became difficult to overcome.
 
-\subsection{Empirical application}
-
-Once the initial parameter set has been estimated, the model can be applied to a real game and a real winner contract. The empirical application will proceed by selecting a specific matchup, estimating the pooled mark probabilities from a broader historical sample, collecting the relevant market observables for that matchup, backing out the implied values of \(\lambda_A\) and \(\lambda_B\), and then computing the model-implied Team A win probability under the fitted parameters. This comparison will show whether the parsimonious baseline model can be aligned closely with the market and will highlight where the model may fail to capture information already embedded in traded prices.
-
-\subsection{Calibration diagnostics}
-
-In addition to reporting the fitted parameter values, the calibration section should include simple diagnostics based on implied moments and scores. In particular, the calibrated model implies expected team scores through \eqref{eq:score-process-mean} and point-margin moments through \eqref{eq:point-margin-mean}--\eqref{eq:point-margin-variance}. Comparing these implied quantities with observed game-level scoring summaries will provide a basic check on whether the fitted model is capturing the correct scoring scale and dispersion before it is used for pricing.
-
-\section{Live repricing extension}
-
-A natural extension of the baseline model is to replace the constant scoring intensities with time-varying instantaneous intensities. In particular, instead of working with constant \(\lambda_i\) and fixed mark probabilities \(p_{i,k}\), one could specify instantaneous scoring intensities \(\lambda_{i,k}(t)\) for \(k \in \{1,2,3\}\). This is analogous in spirit to short-rate modeling, where the relevant finite-horizon quantity is obtained by integrating an instantaneous rate over time. Under such a specification, the cumulative intensity for \(k\)-point scoring events would be
-\[
-\Lambda_{i,k}(T) = \int_0^T \lambda_{i,k}(t)\,dt,
-\]
-and the terminal event counts would satisfy
-\[
-N_{i,k}(T) \sim \mathrm{Poisson}(\Lambda_{i,k}(T)).
-\]
-This would allow the model to capture changing pace across the game, end-of-game effects, and overtime extensions in a more realistic way while preserving the Poisson-process structure.
-
-\section{Trading / stat arb application}
-
-\section{Implementation plan}
-
-\section{Conclusion}
-
-\subsection{Model limitations}
-
-The baseline specification developed in this paper is intentionally simple. In particular, it does not incorporate time-varying pace, game-state effects, or strategic dependence between the two teams. These limitations should be kept in mind when interpreting the model and motivate later extensions such as state-dependent intensities or live repricing adjustments.
-
-\section{References}
-\begin{thebibliography}{9}
-
-\bibitem{applebaumch1}
-David Applebaum.
-``L\'evy processes.''
-In \textit{L\'evy Processes and Stochastic Calculus}.
-Cambridge University Press, 2004, pp.~1--69.
-Chapter DOI: \url{https://doi.org/10.1017/CBO9780511755323.004}.
-
-\bibitem{applebaumch2}
-David Applebaum.
-``Martingales, stopping times and random measures.''
-In \textit{L\'evy Processes and Stochastic Calculus}.
-Cambridge University Press, 2004, pp.~70--119.
-Chapter DOI: \url{https://doi.org/10.1017/CBO9780511755323.005}.
-
-\bibitem{carrmadan}
-Peter Carr and Dilip B. Madan.
-``Option valuation using the fast Fourier transform.''
-\textit{Journal of Computational Finance}, 2(4):61--73, 1999.
-DOI: \url{https://doi.org/10.21314/JCF.1999.043}.
-
-\bibitem{shephard}
-N. G. Shephard.
-``From characteristic function to distribution function: A simple framework for the theory.''
-\textit{Econometric Theory}, 7(4):519--529, 1991.
-DOI: \url{https://doi.org/10.1017/S0266466600004746}.
-
-\bibitem{conttankov}
-Rama Cont and Peter Tankov.
-\textit{Financial Modelling with Jump Processes}.
-Chapman \& Hall/CRC, 2004.
-
-\bibitem{glasserman}
-Paul Glasserman.
-\textit{Monte Carlo Methods in Financial Engineering}.
-Springer, 2004.
-
-\end{thebibliography}
 
 \end{document}

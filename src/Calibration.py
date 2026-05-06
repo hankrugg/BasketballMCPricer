@@ -2,8 +2,6 @@
 Parsimonious calibration helpers for the basketball prediction contract model.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import numpy as np
@@ -80,7 +78,6 @@ class Calibration:
             "p_a": self.p,
             "p_b": self.p,
             "T": float(self.horizon),
-            "contract_type": "team_a_yes",
         }
 
     def model_yes_probability(self, lambda_a):
@@ -337,7 +334,7 @@ def calibrate_market(
     Calibrate a single market observation and return a flat result dictionary.
 
     This is the lightweight parameter-driven entry point for scripts and
-    backtests. It wraps the ``Calibration`` class and returns a single record
+    notebooks. It wraps the ``Calibration`` class and returns a single record
     that can be stored directly in a DataFrame.
     """
 
@@ -351,57 +348,3 @@ def calibrate_market(
     )
     calibration.calibrate(num_grid=num_grid)
     return calibration.summary(team_a=team_a, team_b=team_b).to_dict()
-
-
-def backtest_markets(
-    market_data,
-    p=None,
-    distribution_path=None,
-    num_simulations=100_000,
-    seed=42,
-    num_grid=31,
-    team_a_col="team_a",
-    team_b_col="team_b",
-    horizon_col="T",
-    market_yes_col="market_yes_prob",
-    market_total_col="market_total_points",
-):
-    """
-    Run the parsimonious calibration across many market observations.
-
-    Each row in ``market_data`` should contain:
-    - a Team A win probability
-    - a market total-points target
-    - a game horizon in minutes
-
-    Team name columns are optional; if they are absent, the generic Team A /
-    Team B labels are used.
-    """
-
-    if p is None:
-        _, p = load_distribution(distribution_path)
-
-    records = []
-
-    for row_index, row in market_data.iterrows():
-        team_a = row[team_a_col] if team_a_col in row.index else "Team A"
-        team_b = row[team_b_col] if team_b_col in row.index else "Team B"
-
-        result = calibrate_market(
-            p=p,
-            horizon=row[horizon_col],
-            market_yes_prob=row[market_yes_col],
-            market_total_points=row[market_total_col],
-            num_simulations=num_simulations,
-            seed=seed,
-            num_grid=num_grid,
-            team_a=team_a,
-            team_b=team_b,
-        )
-        result["row_index"] = row_index
-
-        records.append(result)
-
-    results = pd.DataFrame(records).set_index("row_index")
-    results = results[[column for column in results.columns if column not in market_data.columns]]
-    return market_data.join(results, how="left")
