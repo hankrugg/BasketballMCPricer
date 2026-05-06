@@ -188,6 +188,59 @@ def load_distribution(distribution_path):
     return distribution, p
 
 
+def build_score_state_grid(play_by_play_df, kalshi_bar_timestamps):
+    """
+    Carry forward the latest known score state to each Kalshi bar timestamp.
+    """
+
+    state_columns = ["timestamp", "elapsed_minutes", "score_a", "score_b", "total_scoring_events"]
+
+    if isinstance(kalshi_bar_timestamps, pd.DataFrame):
+        bars = kalshi_bar_timestamps.loc[:, ["timestamp"]].copy()
+    elif isinstance(kalshi_bar_timestamps, pd.Series):
+        bars = pd.DataFrame({"timestamp": kalshi_bar_timestamps})
+    else:
+        bars = pd.DataFrame({"timestamp": list(kalshi_bar_timestamps)})
+
+    bars["timestamp"] = pd.to_datetime(bars["timestamp"])
+    bars = bars.sort_values("timestamp").reset_index(drop=True)
+
+    play_by_play = play_by_play_df.loc[:, state_columns].copy()
+    play_by_play["timestamp"] = pd.to_datetime(play_by_play["timestamp"])
+    play_by_play = (
+        play_by_play.sort_values("timestamp")
+        .groupby("timestamp", as_index=False)
+        .last()
+    )
+
+    merged = pd.merge_asof(
+        bars,
+        play_by_play,
+        on="timestamp",
+        direction="backward",
+    )
+
+    merged["elapsed_minutes"] = merged["elapsed_minutes"].fillna(0.0).astype(float)
+    merged["score_a"] = merged["score_a"].fillna(0).astype(int)
+    merged["score_b"] = merged["score_b"].fillna(0).astype(int)
+    merged["total_scoring_events"] = merged["total_scoring_events"].fillna(0).astype(int)
+    merged["current_margin"] = merged["score_a"] - merged["score_b"]
+
+    if play_by_play.empty:
+        final_score_a = 0
+        final_score_b = 0
+        max_elapsed_minutes = 0.0
+    else:
+        final_score_a = int(play_by_play["score_a"].max())
+        final_score_b = int(play_by_play["score_b"].max())
+        max_elapsed_minutes = float(play_by_play["elapsed_minutes"].max())
+
+    merged["final_score_a"] = final_score_a
+    merged["final_score_b"] = final_score_b
+    merged["max_elapsed_minutes"] = max_elapsed_minutes
+    return merged
+
+
 def imply_intensities_from_spread_total(
     p,
     horizon,
